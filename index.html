@@ -356,16 +356,19 @@ const MAPA_TECLAS = { ArrowLeft: 'esq', a: 'esq', A: 'esq', ArrowRight: 'dir', d
   ArrowUp: 'cima', w: 'cima', W: 'cima', ArrowDown: 'baixo', s: 'baixo', S: 'baixo' };
 
 window.addEventListener('keydown', e => {
-  const d = MAPA_TECLAS[e.key];
-  if (d) { tec[d] = true; e.preventDefault(); return; }
   const noCampo = e.target && e.target.tagName === 'INPUT';
+  const d = MAPA_TECLAS[e.key];
+  if (d && !noCampo) { tec[d] = true; e.preventDefault(); return; }   // no campo de nome, as letras devem digitar normalmente
   if (e.key === 'Enter' || (e.key === ' ' && !noCampo)) {
     if (telaAtiva('telaInicio')) { e.preventDefault(); iniciarJogo(); }
     else if (telaAtiva('telaTransicao')) { e.preventDefault(); proximoLabirinto(); }
     else if (telaAtiva('telaFim')) { e.preventDefault(); tentarDeNovo(); }
   }
 });
-window.addEventListener('keyup', e => { const d = MAPA_TECLAS[e.key]; if (d) { tec[d] = false; e.preventDefault(); } });
+window.addEventListener('keyup', e => {
+  const d = MAPA_TECLAS[e.key];
+  if (d) { tec[d] = false; if (!(e.target && e.target.tagName === 'INPUT')) e.preventDefault(); }
+});
 window.addEventListener('blur', () => { for (const k in tec) tec[k] = false; });
 
 document.querySelectorAll('#dpad button').forEach(b => {
