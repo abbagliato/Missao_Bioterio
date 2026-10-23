@@ -82,6 +82,886 @@
   <div id="telaInicio" class="tela ativa">
     <div class="rato-logo">📋</div>
     <h1>MISSÃO BIOTÉRIO</h1>
+    <p>Hoje é dia de entrega! Você é o(a) <b>técnico(a) de biotério</b> e precisa levar o lote de animais, com todo o cuidado, pelos <b>6 setores</b>: Quarentena, Fundação, Produção, Reservado, Higienização e Expedição. Atenção: o <b>analista da qualidade</b> anda por aí registrando não conformidades! Pegue o <b>crachá do setor</b> (e as chaves coloridas) e chegue à <b>porta de passagem</b> em <b>60 segundos</b> por setor.</p>
+    <div class="regras">
+      <p>⌨️ Setas / WASD (ou deslize o dedo / botões na tela)</p>
+      <p>👀 O analista da qualidade (que registra não conformidades), os robôs de limpeza e os sensores de barreira te flagraram fora do protocolo? Você perde uma chance (3 no total).</p>
+      <p>📦 Pare em caixas de insumos e tubos de transferência para não ser notado. ⏱️ +5 s no relógio. 💧 Piso molhado atrasa. 🔕 Silêncio: os animais estão descansando!</p>
+    </div>
+    <input type="text" id="campoNome" maxlength="12" placeholder="Seu nome (até 12 letras)" autocomplete="off">
+    <button class="btn grande" id="btnIniciar">INICIAR MISSÃO</button>
+    <p style="opacity:.7">Enter ou Espaço também iniciam.</p>
+  </div>
+
+  <!-- Resumo entre labirintos -->
+  <div id="telaTransicao" class="tela">
+    <h2 id="trTitulo">Setor concluído!</h2>
+    <p id="trHumor"></p>
+    <div class="linhas" id="trLinhas"></div>
+    <p id="trProximo"></p>
+    <button class="btn" id="btnProximo">Próximo setor</button>
+  </div>
+
+  <!-- Fim de jogo: game over ou vitória + ranking -->
+  <div id="telaFim" class="tela">
+    <h2 id="fimTitulo"></h2>
+    <p id="fimMsg"></p>
+    <div class="linhas" id="fimLinhas"></div>
+    <div id="fimRanking"></div>
+    <div class="botoes">
+      <button class="btn" id="btnTentar">TENTAR DE NOVO</button>
+      <button class="btn sec" id="btnLimpar">Limpar ranking</button>
+    </div>
+  </div>
+</div>
+
+<!-- Botões virtuais (celular) -->
+<div id="dpad">
+  <button class="cima" data-d="cima">▲</button>
+  <button class="esq" data-d="esq">◀</button>
+  <button class="dir" data-d="dir">▶</button>
+  <button class="baixo" data-d="baixo">▼</button>
+</div>
+<div id="rodape">Missão Biotério — qualidade e bem-estar animal em primeiro lugar.</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   MISSÃO BIOTÉRIO
+   ---------------------------------------------------------------------
+   Configurações rápidas (mude à vontade):
+   ===================================================================== */
+const TEMPO_LIMITE = 60;        // segundos por setor
+const TOTAL_LABIRINTOS = 6;     // quantidade de setores jogados
+const VIDAS = 3;                // chances no jogo inteiro
+const BONUS_RELOGIO = 5;        // segundos ganhos ao pegar um relógio
+const CHAVE_RANKING = 'ranking_missao_biotorio';
+const PTS = { queijo: 10, chave: 20, segundo: 10, conclusao: 100, vida: 50 };
+
+/* =====================================================================
+   LABIRINTOS  (19 colunas x 13 linhas, fáceis de editar)
+   ---------------------------------------------------------------------
+   Legenda dos caracteres:
+     #  parede            o  rack de gaiolas (obstáculo)      .  chão
+     S  início do técnico  E  porta de passagem       a  crachá do setor (obrigatório p/ passar)
+     c  selo de boas práticas (+10)   T  relógio (+5 s)
+     b / r / g   chave azul / vermelha / verde (+20)
+     B / R / G   porta trancada azul / vermelha / verde
+     x  caixa de insumos   t  tubo de transferência (pontos de abrigo)
+     p  piso molhado (deixa o técnico lento)
+     < > ^ v  esteiras que empurram o técnico
+   Inimigos: tipo 'analista' (analista da qualidade) | 'robo' (robô de limpeza), vel (tiles/s), rota = pontos [x,y] (vai e volta)
+   Câmeras: x,y (na parede), base/amp (graus), vel (rad/s), alc (alcance em tiles)
+   ===================================================================== */
+// === DADOS ===
+const LABIRINTOS = [
+  {
+    nome: "Setor de Quarentena",
+    dica: "Pegue o crachá do setor e siga até a porta de passagem.",
+    mapa: [
+      '###################',
+      '#S.......c.......E#',
+      '#.oo.oo.oo.oo.oo..#',
+      '#.oo.oo.oo.oo.oo..#',
+      '#...c..........c..#',
+      '#.oo.oo.oo.oo.oo..#',
+      '#.oo.oo.oo.oo.oo..#',
+      '#...x..c.....x....#',
+      '#.oo.oo.oo.oo.oo..#',
+      '#.oo.oo.oo.oo.oo..#',
+      '#.a.......c.......#',
+      '#............T..c.#',
+      '###################'
+    ],
+    inimigos: [{"tipo":"analista","vel":2.2,"rota":[[2,4],[16,4]]}],
+    cameras: []
+  },
+  {
+    nome: "Sala de Fundação",
+    dica: "A porta azul só abre com a chave azul.",
+    mapa: [
+      '###################',
+      '#S...cx.c.......BE#',
+      '#.########.########',
+      '#.########.########',
+      '#.########......#.#',
+      '#.....a###...x..#.#',
+      '#.########..c.b...#',
+      '#.########......#.#',
+      '#...c#####.x....#c#',
+      '#x###############T#',
+      '#.###############.#',
+      '#........c...x....#',
+      '###################'
+    ],
+    inimigos: [{"tipo":"analista","vel":2.4,"rota":[[2,1],[9,1]]},{"tipo":"analista","vel":2.2,"rota":[[1,7],[1,11],[10,11]]}],
+    cameras: []
+  },
+  {
+    nome: "Sala de Produção",
+    dica: "Cuidado com os sensores de barreira e o piso molhado.",
+    mapa: [
+      '###################',
+      '#S....c.....c.....#',
+      '#........p........#',
+      '#.......x.........#',
+      '#..#####...#####..#',
+      '#........#.......c#',
+      '#.x..p...#...p..x.#',
+      '#........#........#',
+      '#..#####.a.#####..#',
+      '#.c......x......c.#',
+      '#...p.....p...p...#',
+      '#T.......c.......E#',
+      '###################'
+    ],
+    inimigos: [{"tipo":"analista","vel":2.4,"rota":[[2,2],[16,2]]}],
+    cameras: [{"x":9,"y":0,"base":90,"amp":55,"vel":0.9,"alc":7},{"x":0,"y":6,"base":0,"amp":50,"vel":1.1,"alc":7},{"x":18,"y":9,"base":180,"amp":45,"vel":0.8,"alc":6}]
+  },
+  {
+    nome: "Sala de Reservado",
+    dica: "Área restrita: três chaves, três portas, silêncio total.",
+    mapa: [
+      '###################',
+      '#S#..t..#.G..c#E.c#',
+      '#.###.#.#.###.###.#',
+      '#..c#.#...#.#g....#',
+      '###.#.#.###.#####.#',
+      '#.#c#.#..c.c......#',
+      '#.#.#.#############',
+      '#.#.#.....#...t..T#',
+      '#.#.###.#R#.#####.#',
+      '#.#...#.#..rt...#.#',
+      '#.###.###########.#',
+      '#..a.......c.bBc..#',
+      '###################'
+    ],
+    inimigos: [{"tipo":"analista","vel":2.7,"rota":[[9,9],[15,9]]},{"tipo":"analista","vel":2.7,"rota":[[11,7],[17,7]]},{"tipo":"robo","vel":3.4,"rota":[[3,1],[7,1]]}],
+    cameras: [{"x":9,"y":0,"base":90,"amp":50,"vel":1.3,"alc":6}]
+  },
+  {
+    nome: "Setor de Higienização",
+    dica: "Esteiras de lavagem e um robô de limpeza. Chaves azul e vermelha.",
+    mapa: [
+      '###################',
+      '#S....c...<<<<.c..#',
+      '#########.#######.#',
+      '#..c.>>>>>..c..T..#',
+      '#.#################',
+      '#..x.<<<<<.xb..c..#',
+      '#################B#',
+      '#...r...>>>>>.c...#',
+      '#R#################',
+      '#....a..x.c<<.x...#',
+      '#########.#######.#',
+      '#E.>>>>.x.c....c..#',
+      '###################'
+    ],
+    inimigos: [{"tipo":"analista","vel":2.2,"rota":[[2,5],[16,5]]},{"tipo":"robo","vel":3,"rota":[[4,9],[16,9]]},{"tipo":"analista","vel":2.4,"rota":[[4,11],[15,11]]}],
+    cameras: []
+  },
+  {
+    nome: "Setor de Expedição",
+    dica: "Última parada! Duas portas e a doca de expedição no fim.",
+    mapa: [
+      '###################',
+      '#S.c....T#......###',
+      '#....oox.#x..cr.###',
+      '#....oo..#.oo...###',
+      '#........#>>>>>>###',
+      '#........#......#.#',
+      '#.x.....cB.c...cRE#',
+      '#........#......#.#',
+      '#........#<<<<<<###',
+      '#....oo..#.oo...###',
+      '#b...oo..#c...ax###',
+      '#......c.#......###',
+      '###################'
+    ],
+    inimigos: [{"tipo":"analista","vel":2.6,"rota":[[3,2],[3,10]]},{"tipo":"robo","vel":3.2,"rota":[[10,6],[15,6]]}],
+    cameras: [{"x":0,"y":6,"base":0,"amp":50,"vel":1.0,"alc":6},{"x":12,"y":12,"base":270,"amp":45,"vel":1.2,"alc":6}]
+  }
+];
+// === FIM DADOS ===
+
+/* =====================================================================
+   ESTADO GERAL
+   ===================================================================== */
+const T = 32, COLS = 19, ROWS = 13;           // tamanho do tile e do mapa
+const RAIO = 9;                                // "meia caixa" de colisão do rato (px)
+const VEL_RATO = 165;                          // px por segundo
+const VEL_ESTEIRA = 95, FATOR_POCA = 0.5;
+
+const cv = document.getElementById('tela');
+const ctx = cv.getContext('2d');
+cv.width = COLS * T; cv.height = ROWS * T;
+ctx.imageSmoothingEnabled = false;
+const $ = id => document.getElementById(id);
+
+let estado = 'menu';          // menu | jogando | transicao | fim
+let nivel = 0, vidas = VIDAS, pontos = 0, queijos = 0, labsOk = 0, tempoTotal = 0;
+let nome = 'Técnico', idPartida = 0;
+let grade, inicio, p, inimigos, cameras, chaves;
+let tempo = TEMPO_LIMITE, tempoLab = 0, queijosLab = 0, relogio = 0;
+let alerta = 0, invul = 0, flash = 0, vistoPor = null;
+let ultimoTique = 0, acumPasso = 0;
+let toastTimer = 0, toastCool = 0;
+
+const DIR_ESTEIRA = { '<': [-1, 0], '>': [1, 0], '^': [0, -1], 'v': [0, 1] };
+const COR_PORTA = { B: '#3b82f6', R: '#ef4444', G: '#22c55e' };
+const COR_CHAVE = { b: '#3b82f6', r: '#ef4444', g: '#22c55e' };
+const NOME_COR = { b: 'azul', r: 'vermelha', g: 'verde' };
+
+const HUMOR_QUEIJO = ['Selo de boas práticas! Ponto para o bem-estar animal.', 'Item do checklist: aprovado!', 'Mais um critério atendido!', 'Esse vai direto para a auditoria.', 'Boas práticas: aprovadas!'];
+const HUMOR_CAPTURA = ['Não conformidade registrada! Volte ao início do setor.', 'Ops! O analista da qualidade anotou na prancheta...', 'Esqueci de higienizar as mãos... NC aberta!', 'Shhh! Os animais estão dormindo!'];
+const HUMOR_FASE = ['Setor entregue sem não conformidades!', 'Barreira sanitária respeitada!', 'Qualidade é cuidar de cada detalhe!', 'O analista da qualidade não achou nada. Ótimo!'];
+
+/* =====================================================================
+   ÁUDIO (Web Audio API) — só inicia após o clique no botão
+   ===================================================================== */
+let ac = null;
+function iniciarAudio() {
+  try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) { ac = null; }
+}
+function tom(freq, dur = 0.1, tipo = 'square', vol = 0.05, atraso = 0, freqFim = null) {
+  if (!ac) return;
+  const t = ac.currentTime + atraso, o = ac.createOscillator(), g = ac.createGain();
+  o.type = tipo; o.frequency.setValueAtTime(freq, t);
+  if (freqFim) o.frequency.exponentialRampToValueAtTime(freqFim, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+const SOM = {
+  passo:  () => tom(120 + Math.random() * 40, 0.05, 'triangle', 0.05),
+  item:   () => { tom(660, 0.08, 'square', 0.05); tom(990, 0.12, 'square', 0.05, 0.07); },
+  chave:  () => { tom(520, 0.08, 'triangle', 0.08); tom(780, 0.08, 'triangle', 0.08, 0.08); tom(1040, 0.15, 'triangle', 0.08, 0.16); },
+  porta:  () => tom(180, 0.25, 'sawtooth', 0.05, 0, 90),
+  relogio:() => { tom(900, 0.06, 'sine', 0.08); tom(1200, 0.12, 'sine', 0.08, 0.07); },
+  alerta: () => { tom(900, 0.14, 'sawtooth', 0.07); tom(600, 0.2, 'sawtooth', 0.07, 0.14); },
+  tique:  alto => tom(alto ? 1000 : 760, 0.06, 'square', 0.05),
+  poca:   () => tom(300, 0.15, 'sine', 0.05, 0, 120),
+  fase:   () => [523, 659, 784].forEach((f, i) => tom(f, 0.15, 'square', 0.05, i * 0.1)),
+  fanfarra: () => [523, 523, 523, 659, 784, 659, 784, 1046].forEach((f, i) => tom(f, 0.22, 'square', 0.06, i * 0.15)),
+  derrota:() => [440, 392, 349, 262].forEach((f, i) => tom(f, 0.3, 'sawtooth', 0.06, i * 0.22))
+};
+
+/* =====================================================================
+   ENTRADA: teclado, botões virtuais e deslizar o dedo
+   ===================================================================== */
+const tec = { esq: false, dir: false, cima: false, baixo: false };   // teclado
+const dp  = { esq: false, dir: false, cima: false, baixo: false };   // botões virtuais
+let swipe = { x: 0, y: 0 };
+
+const MAPA_TECLAS = { ArrowLeft: 'esq', a: 'esq', A: 'esq', ArrowRight: 'dir', d: 'dir', D: 'dir',
+  ArrowUp: 'cima', w: 'cima', W: 'cima', ArrowDown: 'baixo', s: 'baixo', S: 'baixo' };
+
+window.addEventListener('keydown', e => {
+  const noCampo = e.target && e.target.tagName === 'INPUT';
+  const d = MAPA_TECLAS[e.key];
+  if (d && !noCampo) { tec[d] = true; e.preventDefault(); return; }   // no campo de nome, as letras devem digitar normalmente
+  if (e.key === 'Enter' || (e.key === ' ' && !noCampo)) {
+    if (telaAtiva('telaInicio')) { e.preventDefault(); iniciarJogo(); }
+    else if (telaAtiva('telaTransicao')) { e.preventDefault(); proximoLabirinto(); }
+    else if (telaAtiva('telaFim')) { e.preventDefault(); tentarDeNovo(); }
+  }
+});
+window.addEventListener('keyup', e => {
+  const d = MAPA_TECLAS[e.key];
+  if (d) { tec[d] = false; if (!(e.target && e.target.tagName === 'INPUT')) e.preventDefault(); }
+});
+window.addEventListener('blur', () => { for (const k in tec) tec[k] = false; });
+
+document.querySelectorAll('#dpad button').forEach(b => {
+  const d = b.dataset.d;
+  b.addEventListener('pointerdown', e => { e.preventDefault(); dp[d] = true; });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => b.addEventListener(ev, () => { dp[d] = false; }));
+  b.addEventListener('contextmenu', e => e.preventDefault());
+});
+
+// Deslizar o dedo sobre o labirinto
+let toque = null;
+cv.addEventListener('touchstart', e => { const t = e.touches[0]; toque = { x: t.clientX, y: t.clientY }; e.preventDefault(); }, { passive: false });
+cv.addEventListener('touchmove', e => {
+  if (!toque) return; const t = e.touches[0];
+  let dx = t.clientX - toque.x, dy = t.clientY - toque.y; const len = Math.hypot(dx, dy);
+  if (len > 14) {
+    if (Math.abs(dx) > Math.abs(dy)) swipe = { x: Math.sign(dx), y: 0 }; else swipe = { x: 0, y: Math.sign(dy) };
+    if (len > 40) { toque.x = t.clientX - dx / len * 40; toque.y = t.clientY - dy / len * 40; }   // reancora p/ mudar de direção
+  }
+  e.preventDefault();
+}, { passive: false });
+const fimToque = () => { toque = null; swipe = { x: 0, y: 0 }; };
+cv.addEventListener('touchend', fimToque); cv.addEventListener('touchcancel', fimToque);
+
+if (window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) $('dpad').classList.add('on');
+
+function vetorEntrada() {
+  let x = ((tec.dir || dp.dir) ? 1 : 0) - ((tec.esq || dp.esq) ? 1 : 0) + swipe.x;
+  let y = ((tec.baixo || dp.baixo) ? 1 : 0) - ((tec.cima || dp.cima) ? 1 : 0) + swipe.y;
+  x = Math.max(-1, Math.min(1, x)); y = Math.max(-1, Math.min(1, y));
+  const l = Math.hypot(x, y); return l ? [x / l, y / l] : [0, 0];
+}
+
+/* =====================================================================
+   TELAS
+   ===================================================================== */
+const telaAtiva = id => { const el = $(id); return el.classList.contains('ativa') && !el.classList.contains('fade'); };
+function mostrar(id) { const el = $(id); el.classList.remove('fade'); el.classList.add('ativa'); }
+function esconder(id) { const el = $(id); el.classList.add('fade'); setTimeout(() => { if (el.classList.contains('fade')) el.classList.remove('ativa', 'fade'); }, 520); }
+function falar(msg, ms = 2000) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), ms);
+}
+const sorteia = a => a[Math.floor(Math.random() * a.length)];
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtTempo = s => { s = Math.round(s); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+
+/* =====================================================================
+   CARREGAR LABIRINTO
+   ===================================================================== */
+function carregarNivel(i) {
+  nivel = i; const lv = LABIRINTOS[i];
+  grade = lv.mapa.map(r => r.split(''));
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (grade[y][x] === 'S') { inicio = [x, y]; grade[y][x] = '.'; }
+  chaves = {}; tempo = TEMPO_LIMITE; tempoLab = 0; queijosLab = 0; alerta = 0; invul = 0; flash = 0; ultimoTique = 0;
+  inimigos = lv.inimigos.map(e => ({ ...e, x: 0, y: 0, i: 1, sentido: 1, pausa: 0, ang: 0, vendo: false }));
+  cameras = lv.cameras.map(c => ({ ...c, ang: rad(c.base), vendo: false }));
+  posicionar();
+}
+function posicionar() {
+  p = { x: inicio[0] * T + T / 2, y: inicio[1] * T + T / 2, ang: 0, anim: 0 };
+  inimigos.forEach(e => {
+    e.x = e.rota[0][0] * T + T / 2; e.y = e.rota[0][1] * T + T / 2; e.i = e.rota.length > 1 ? 1 : 0; e.sentido = 1; e.pausa = 0.4; e.vendo = false;
+    if (e.rota.length > 1) e.ang = Math.atan2(e.rota[1][1] - e.rota[0][1], e.rota[1][0] - e.rota[0][0]);
+  });
+  alerta = 0;
+}
+const rad = g => g * Math.PI / 180;
+const ch = (tx, ty) => (grade[ty] && grade[ty][tx]) || '#';
+const tileEm = (x, y) => ch(Math.floor(x / T), Math.floor(y / T));
+const solido = c => c === '#' || c === 'o' || c === 'B' || c === 'R' || c === 'G';
+const escondido = () => { const c = tileEm(p.x, p.y); return c === 'x' || c === 't'; };
+
+/* =====================================================================
+   FLUXO DO JOGO
+   ===================================================================== */
+function iniciarJogo() {
+  if (!telaAtiva('telaInicio')) return;
+  iniciarAudio();
+  nome = $('campoNome').value.trim().slice(0, 12) || 'Técnico';
+  esconder('telaInicio');
+  novaPartida();
+}
+function novaPartida() {
+  idPartida = Date.now(); vidas = VIDAS; pontos = 0; queijos = 0; labsOk = 0; tempoTotal = 0;
+  carregarNivel(0);
+  $('hud').classList.add('on');
+  estado = 'jogando';
+  anunciarNivel();
+}
+function anunciarNivel() { falar(`${nivel + 1}/${TOTAL_LABIRINTOS} · ${LABIRINTOS[nivel].nome} — ${LABIRINTOS[nivel].dica}`, 3200); }
+
+function tentarDeNovo() {
+  if (!telaAtiva('telaFim')) return;
+  iniciarAudio(); esconder('telaFim'); novaPartida();
+}
+function proximoLabirinto() {
+  if (!telaAtiva('telaTransicao')) return;
+  iniciarAudio(); esconder('telaTransicao');
+  carregarNivel(nivel + 1); estado = 'jogando'; anunciarNivel();
+}
+
+function concluirLabirinto() {
+  const sobra = Math.floor(tempo);
+  const bonusTempo = sobra * PTS.segundo;
+  pontos += bonusTempo + PTS.conclusao;
+  labsOk++; tempoTotal += tempoLab;
+  if (nivel + 1 >= TOTAL_LABIRINTOS) { finalizar('vitoria', sobra, bonusTempo); return; }
+  estado = 'transicao'; SOM.fase();
+  $('trTitulo').textContent = `Setor ${nivel + 1} concluído!`;
+  $('trHumor').textContent = sorteia(HUMOR_FASE);
+  $('trLinhas').innerHTML =
+    `<span>Tempo restante</span><b>${sobra}s</b>` +
+    `<span>Bônus de tempo</span><b>+${bonusTempo}</b>` +
+    `<span>Conclusão</span><b>+${PTS.conclusao}</b>` +
+    `<span>Selos de boas práticas</span><b>⭐ ${queijosLab}</b>` +
+    `<span>Pontuação total</span><b>${pontos}</b>`;
+  $('trProximo').textContent = `A seguir: ${LABIRINTOS[nivel + 1].nome}`;
+  mostrar('telaTransicao');
+}
+
+function capturado() {
+  vidas--; flash = 1; SOM.alerta(); atualizarHUD();
+  if (vidas <= 0) { tempoTotal += tempoLab; finalizar('capturado'); return; }
+  posicionar(); invul = 1.5;
+  falar(sorteia(HUMOR_CAPTURA) + ` (${vidas} ${vidas === 1 ? 'vida' : 'vidas'})`, 2400);
+}
+
+/* ---------- Fim de jogo + ranking ---------- */
+let rankingMem = [];
+function lerRanking() { try { return JSON.parse(localStorage.getItem(CHAVE_RANKING)) || []; } catch (e) { return rankingMem; } }
+function gravarRanking(l) { rankingMem = l; try { localStorage.setItem(CHAVE_RANKING, JSON.stringify(l)); } catch (e) { /* sem localStorage */ } }
+const comparaRanking = (a, b) => b.labs - a.labs || b.pontos - a.pontos || a.tempo - b.tempo;
+
+function finalizar(tipo, sobra = 0, bonusTempo = 0) {
+  estado = 'fim'; $('hud').classList.remove('on');
+  let bonusVidas = 0;
+  if (tipo === 'vitoria') {
+    bonusVidas = vidas * PTS.vida; pontos += bonusVidas; SOM.fanfarra();   // tempo total já somado em concluirLabirinto
+  } else SOM.derrota();
+  const lista = lerRanking();
+  lista.push({ id: idPartida, nome, pontos, labs: labsOk, tempo: Math.round(tempoTotal * 10) / 10 });
+  lista.sort(comparaRanking); gravarRanking(lista.slice(0, 50));
+
+  const titulos = { vitoria: '🏆 MISSÃO CUMPRIDA!', tempo: 'GAME OVER', capturado: 'GAME OVER' };
+  const msgs = { vitoria: 'Lote entregue em todos os setores, sem não conformidades graves! Parabéns, equipe!',
+    tempo: 'O tempo acabou! O turno terminou antes da entrega...', capturado: 'Não conformidade registrada! As chances acabaram.' };
+  $('fimTitulo').textContent = titulos[tipo]; $('fimTitulo').classList.toggle('gameover', tipo !== 'vitoria'); $('fimMsg').textContent = msgs[tipo];
+  $('fimLinhas').innerHTML =
+    `<span>Jogador</span><b>${esc(nome)}</b>` +
+    `<span>Pontuação</span><b>${pontos}</b>` +
+    `<span>Setores</span><b>${labsOk}/${TOTAL_LABIRINTOS}</b>` +
+    `<span>Tempo total</span><b>${fmtTempo(tempoTotal)}</b>` +
+    (tipo === 'vitoria' ? `<span>Bônus de vidas</span><b>+${bonusVidas}</b>` : '');
+  desenharRanking();
+  mostrar('telaFim');
+}
+function desenharRanking() {
+  const lista = lerRanking().sort(comparaRanking).slice(0, 10);
+  const medalha = ['🥇', '🥈', '🥉'];
+  let h = '<table><tr><th>#</th><th>Jogador</th><th>Pontos</th><th>Setores</th><th>Tempo</th></tr>';
+  lista.forEach((r, i) => {
+    h += `<tr class="${r.id === idPartida ? 'eu' : ''}"><td>${medalha[i] || i + 1}</td><td class="nome">${esc(r.nome)}</td><td>${r.pontos}</td><td>${r.labs}/${TOTAL_LABIRINTOS}</td><td>${fmtTempo(r.tempo)}</td></tr>`;
+  });
+  if (!lista.length) h += '<tr><td colspan="5">Ranking vazio</td></tr>';
+  $('fimRanking').innerHTML = h + '</table>';
+}
+function limparRanking() {
+  if (confirm('Tem certeza que deseja apagar todo o ranking?')) { gravarRanking([]); desenharRanking(); }
+}
+
+$('btnIniciar').addEventListener('click', iniciarJogo);
+$('btnProximo').addEventListener('click', proximoLabirinto);
+$('btnTentar').addEventListener('click', tentarDeNovo);
+$('btnLimpar').addEventListener('click', limparRanking);
+
+/* =====================================================================
+   ATUALIZAÇÃO (lógica a cada quadro)
+   ===================================================================== */
+function colide(x, y) {
+  for (const [ox, oy] of [[-RAIO, -RAIO], [RAIO, -RAIO], [-RAIO, RAIO], [RAIO, RAIO]]) {
+    const tx = Math.floor((x + ox) / T), ty = Math.floor((y + oy) / T), c = ch(tx, ty);
+    if (c === 'B' || c === 'R' || c === 'G') {
+      const k = c.toLowerCase();
+      if (chaves[k]) { grade[ty][tx] = '.'; SOM.porta(); falar(`Porta ${NOME_COR[k]} destrancada!`, 1200); continue; }
+      if (toastCool <= 0) { falar(`Trancada! Preciso da chave ${NOME_COR[k]}.`, 1400); toastCool = 1.2; }
+      return true;
+    }
+    if (solido(c)) return true;
+  }
+  return false;
+}
+
+function atualizar(dt) {
+  if (estado !== 'jogando') return;
+  toastCool -= dt; invul = Math.max(0, invul - dt); flash = Math.max(0, flash - dt * 2.5);
+  tempo -= dt; tempoLab += dt;
+  if (tempo <= 0) { tempo = 0; tempoTotal += tempoLab; atualizarHUD(); finalizar('tempo'); return; }
+  avisoDeTempo(dt);
+
+  // ----- movimento do rato -----
+  const [ix, iy] = vetorEntrada();
+  const c0 = tileEm(p.x, p.y);
+  let vx = ix * VEL_RATO, vy = iy * VEL_RATO;
+  if (c0 === 'p') { vx *= FATOR_POCA; vy *= FATOR_POCA; }
+  if (DIR_ESTEIRA[c0]) { vx += DIR_ESTEIRA[c0][0] * VEL_ESTEIRA; vy += DIR_ESTEIRA[c0][1] * VEL_ESTEIRA; }
+  if (!colide(p.x + vx * dt, p.y)) p.x += vx * dt;
+  if (!colide(p.x, p.y + vy * dt)) p.y += vy * dt;
+  if (ix || iy) {
+    p.ang = Math.atan2(iy, ix); p.anim += dt * 16; acumPasso += dt;
+    if (acumPasso > 0.2) { acumPasso = 0; SOM.passo(); }
+  }
+  efeitosDoChao();
+
+  // ----- inimigos e câmeras -----
+  inimigos.forEach(e => moverInimigo(e, dt));
+  cameras.forEach(c => { c.ang = rad(c.base) + rad(c.amp) * Math.sin(performance.now() / 1000 * c.vel); });
+  detectar(dt);
+  atualizarHUD();
+}
+
+function efeitosDoChao() {
+  const tx = Math.floor(p.x / T), ty = Math.floor(p.y / T), c = ch(tx, ty);
+  const limpa = () => { grade[ty][tx] = '.'; };
+  if (c === 'c') { limpa(); queijos++; queijosLab++; pontos += PTS.queijo; SOM.item(); falar(sorteia(HUMOR_QUEIJO), 1400); }
+  else if (c === 'a' || c === 'b' || c === 'r' || c === 'g') {
+    limpa(); chaves[c] = true; pontos += PTS.chave; SOM.chave();
+    falar(c === 'a' ? 'Crachá do setor na mão! Agora é só chegar à porta de passagem.' : `Peguei a chave ${NOME_COR[c]}!`, 1800);
+  }
+  else if (c === 'T') { limpa(); tempo += BONUS_RELOGIO; SOM.relogio(); falar(`+${BONUS_RELOGIO} segundos! Todo segundo conta.`, 1400); }
+  else if (c === 'p') { if (toastCool <= 0) { SOM.poca(); falar('Piso molhado! Vou devagar para não escorregar...', 1200); toastCool = 1.5; } }
+  else if (c === 'E') {
+    if (chaves.a) concluirLabirinto();
+    else if (toastCool <= 0) { falar('A passagem exige o crachá do setor!', 1600); toastCool = 1.5; }
+  }
+}
+
+function avisoDeTempo(dt) {
+  const cr = $('cronometro');
+  if (tempo <= 10) {
+    cr.classList.add('critico');
+    const intervalo = tempo <= 5 ? 0.25 : 0.5;
+    ultimoTique -= dt;
+    if (ultimoTique <= 0) { ultimoTique = intervalo; SOM.tique(Math.floor(tempo * 4) % 2); }
+  } else cr.classList.remove('critico');
+}
+
+function moverInimigo(e, dt) {
+  if (e.rota.length < 2) return;
+  if (e.pausa > 0) { e.pausa -= dt; return; }
+  const [tx, ty] = e.rota[e.i], ax = tx * T + T / 2, ay = ty * T + T / 2;
+  const dx = ax - e.x, dy = ay - e.y, d = Math.hypot(dx, dy), passo = e.vel * T * dt;
+  if (d <= passo) {
+    e.x = ax; e.y = ay; e.pausa = 0.25;
+    e.i += e.sentido;
+    if (e.i >= e.rota.length || e.i < 0) { e.sentido *= -1; e.i += 2 * e.sentido; }
+  } else { e.x += dx / d * passo; e.y += dy / d * passo; e.ang = Math.atan2(dy, dx); }
+}
+
+/* ---------- Visão: cone + linha de visada sem paredes no caminho ---------- */
+function linhaLivre(x1, y1, x2, y2) {
+  const n = Math.ceil(Math.hypot(x2 - x1, y2 - y1) / 6);
+  for (let i = 0; i <= n; i++) { const t = i / n; if (solido(tileEm(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t))) return false; }
+  return true;
+}
+function normAng(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
+function enxerga(x, y, ang, alcTiles, fov) {
+  const dx = p.x - x, dy = p.y - y, d = Math.hypot(dx, dy);
+  if (d > alcTiles * T) return false;
+  if (d > T * 0.6 && Math.abs(normAng(Math.atan2(dy, dx) - ang)) > fov / 2) return false;
+  return linhaLivre(x, y, p.x, p.y);
+}
+const PERFIL = { analista: { alc: 4.5, fov: rad(70) }, robo: { alc: 6, fov: rad(85) } };
+const origemCamera = c => ({ x: c.x * T + T / 2 + Math.cos(rad(c.base)) * T * 0.6, y: c.y * T + T / 2 + Math.sin(rad(c.base)) * T * 0.6 });
+
+function detectar(dt) {
+  vistoPor = null;
+  const oculto = escondido();
+  inimigos.forEach(e => {
+    const pf = PERFIL[e.tipo]; e.vendo = false;
+    if (oculto || invul > 0) return;
+    if (enxerga(e.x, e.y, e.ang, pf.alc, pf.fov)) { e.vendo = true; vistoPor = e; }
+    else if (Math.hypot(p.x - e.x, p.y - e.y) < 18) { e.vendo = true; vistoPor = e; alerta = 0.4; }   // esbarrou
+  });
+  cameras.forEach(c => {
+    c.vendo = false; if (oculto || invul > 0) return;
+    const o = origemCamera(c);
+    if (enxerga(o.x, o.y, c.ang, c.alc, rad(50))) { c.vendo = true; vistoPor = c; }
+  });
+  if (vistoPor) { if (alerta === 0) SOM.alerta(); alerta += dt; } else alerta = Math.max(0, alerta - dt * 2);
+  if (alerta >= 0.4) capturado();
+}
+
+function atualizarHUD() {
+  $('hQueijos').textContent = '⭐ ' + queijos;
+  $('vidas').textContent = '♥'.repeat(Math.max(0, vidas)) + '♡'.repeat(Math.max(0, VIDAS - vidas));
+  $('hLab').textContent = `${nivel + 1}/${TOTAL_LABIRINTOS}`;
+  $('hPontos').textContent = pontos;
+  const s = Math.ceil(tempo);
+  $('cronometro').textContent = fmtTempo(s);
+}
+
+/* =====================================================================
+   DESENHO (pixel art desenhada por código)
+   ===================================================================== */
+function r(c, x, y, w, h) { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
+
+function desenharChao(tx, ty) { r(((tx + ty) & 1) ? '#e7f5f8' : '#d8edf2', tx * T, ty * T, T, T); }
+
+function desenharTile(c, tx, ty, t) {
+  const x = tx * T, y = ty * T;
+  if (c === '#') {
+    r('#3d6c82', x, y, T, T); r('#86bdd0', x, y, T, T - 6); r('#a9d9e8', x, y, T, 3);
+    r('#6aa3ba', x + 3, y + 8, T - 6, 2); r('#6aa3ba', x + 3, y + 16, T - 6, 2);
+    r('#2f5b70', x + 4, y + 4, 2, 2); r('#2f5b70', x + T - 6, y + 4, 2, 2);
+    return;
+  }
+  desenharChao(tx, ty);
+  switch (c) {
+    case 'o': // gaiola
+      r('#f1dfa8', x + 3, y + 14, T - 6, T - 17);
+      r('#b9c6cc', x + 2, y + 2, T - 4, T - 4);
+      ctx.fillStyle = '#6b7c85'; for (let i = 0; i < 6; i++) ctx.fillRect(x + 5 + i * 5, y + 4, 2, T - 8);
+      r('#6b7c85', x + 2, y + 2, T - 4, 3); r('#6b7c85', x + 2, y + T - 5, T - 4, 3);
+      ctx.fillStyle = '#f4f5fa'; ctx.beginPath(); ctx.ellipse(x + 16, y + 22, 7, 4, 0, 0, 7); ctx.fill();
+      r('#ffc2d0', x + 21, y + 19, 3, 3); r('#f3a6b8', x + 8, y + 22, 4, 1);
+      ctx.fillStyle = '#6b7c85'; ctx.font = 'bold 8px monospace'; ctx.fillText('z', x + 22, y + 15 + Math.sin(t * 2 + tx) * 1.5);
+      break;
+    case 'B': case 'R': case 'G':
+      r('#2b3a42', x, y, T, T); r(COR_PORTA[c], x + 3, y + 3, T - 6, T - 6); r('rgba(255,255,255,.25)', x + 3, y + 3, T - 6, 5);
+      r('#fff', x + 13, y + 12, 6, 6); r('#2b3a42', x + 15, y + 18, 2, 6);
+      break;
+    case 'c': { // selo de boas práticas (estrela)
+      const b = Math.sin(t * 4 + tx) * 1.5, cx = x + 16, cy = y + 16 + b;
+      ctx.fillStyle = '#ffd23f'; ctx.strokeStyle = '#d99a00'; ctx.lineWidth = 2; ctx.beginPath();
+      for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? 5 : 12; ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      r('#fff6c4', cx - 3, cy - 5, 3, 3);
+      break; }
+    case 'a': { // crachá do setor
+      const b = Math.sin(t * 4 + tx) * 1.5;
+      r('#16414f', x + 5, y + 8 + b, 22, 16); r('#f2fbfc', x + 6, y + 9 + b, 20, 14);
+      r('#222', x + 6, y + 12 + b, 20, 3); r('#2ecc9a', x + 8, y + 18 + b, 6, 4); r('#9ab', x + 17, y + 18 + b, 7, 2);
+      break; }
+    case 'b': case 'r': case 'g': { // chaves
+      const b = Math.sin(t * 4 + tx) * 1.5, k = COR_CHAVE[c];
+      ctx.fillStyle = k; ctx.beginPath(); ctx.arc(x + 11, y + 16 + b, 6, 0, 7); ctx.fill();
+      r('#fff', x + 9, y + 14 + b, 3, 3); r(k, x + 15, y + 14 + b, 12, 4); r(k, x + 22, y + 18 + b, 3, 5); r(k, x + 18, y + 18 + b, 3, 3);
+      break; }
+    case 'T': { // relógio
+      const b = Math.sin(t * 4 + tx) * 1.5;
+      ctx.fillStyle = '#3b82f6'; ctx.beginPath(); ctx.arc(x + 16, y + 16 + b, 11, 0, 7); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x + 16, y + 16 + b, 8, 0, 7); ctx.fill();
+      r('#222', x + 15, y + 10 + b, 2, 7); r('#222', x + 15, y + 15 + b, 6, 2);
+      r('#ff4d5a', x + 13, y + 3 + b, 6, 3);
+      break; }
+    case 'p': { // piso molhado
+      ctx.fillStyle = 'rgba(90,170,255,.55)'; ctx.beginPath(); ctx.ellipse(x + 16, y + 17, 14, 10, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(220,240,255,.9)'; ctx.beginPath(); ctx.arc(x + 10 + Math.sin(t * 3 + tx) * 2, y + 14, 3, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + 21, y + 19 + Math.cos(t * 2.4 + ty) * 2, 2, 0, 7); ctx.fill();
+      break; }
+    case '<': case '>': case '^': case 'v': { // esteiras
+      r('#4a5560', x, y, T, T); r('#2b333b', x, y + 2, T, 2); r('#2b333b', x, y + T - 4, T, 2);
+      const [dx, dy] = DIR_ESTEIRA[c], off = (t * 20) % 16;
+      ctx.fillStyle = '#ffd23f';
+      for (let i = -1; i < 3; i++) {
+        const o = i * 16 + off, cx = x + 16 + dx * (o - 16 + 8), cy = y + 16 + dy * (o - 16 + 8);
+        if (cx < x - 4 || cx > x + T + 4 || cy < y - 4 || cy > y + T + 4) continue;
+        ctx.beginPath();
+        if (dx) { ctx.moveTo(cx - dx * 4, cy - 6); ctx.lineTo(cx + dx * 4, cy); ctx.lineTo(cx - dx * 4, cy + 6); }
+        else { ctx.moveTo(cx - 6, cy - dy * 4); ctx.lineTo(cx, cy + dy * 4); ctx.lineTo(cx + 6, cy - dy * 4); }
+        ctx.fill();
+      }
+      break; }
+    case 'E': { // porta de passagem do setor
+      const ok = chaves.a, glow = ok ? 0.5 + 0.5 * Math.sin(t * 6) : 0;
+      r('#27404a', x, y, T, T); r(ok ? '#1f9d7a' : '#4b5c64', x + 3, y + 3, T - 6, T - 6);
+      ctx.fillStyle = '#10262d'; for (let i = 0; i < 5; i++) ctx.fillRect(x + 6, y + 6 + i * 5, T - 12, 3);
+      if (ok) { ctx.strokeStyle = `rgba(160,255,220,${0.4 + glow * 0.6})`; ctx.lineWidth = 3; ctx.strokeRect(x + 1.5, y + 1.5, T - 3, T - 3); }
+      break; }
+  }
+}
+
+function desenharEsconderijo(c, tx, ty, alfa) {
+  const x = tx * T, y = ty * T; ctx.save(); ctx.globalAlpha = alfa;
+  if (c === 'x') {
+    r('#a5733d', x + 2, y + 2, T - 4, T - 4); r('#c8955a', x + 4, y + 4, T - 8, T - 8);
+    r('#e4c68f', x + 13, y + 2, 6, T - 4); r('#8a5d2c', x + 4, y + 4, T - 8, 2);
+  } else {
+    r('#6f8fa0', x, y + 6, T, T - 12); r('rgba(200,240,255,.55)', x, y + 8, T, T - 16); r('#fff', x, y + 9, T, 3);
+    r('#456373', x, y + 6, 4, T - 12); r('#456373', x + T - 4, y + 6, 4, T - 12);
+  }
+  ctx.restore();
+}
+
+function desenharCone(x, y, ang, alc, fov, cor) {
+  ctx.fillStyle = cor; ctx.beginPath(); ctx.moveTo(x, y);
+  const N = 20;
+  for (let k = 0; k <= N; k++) {
+    const a = ang - fov / 2 + fov * k / N; let d = 0;
+    while (d < alc * T && !solido(tileEm(x + Math.cos(a) * d, y + Math.sin(a) * d))) d += 4;
+    ctx.lineTo(x + Math.cos(a) * d, y + Math.sin(a) * d);
+  }
+  ctx.closePath(); ctx.fill();
+}
+
+function desenharRato(x, y, ang, anim, alfa) {   // desenha o técnico de biotério (visto de cima)
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.globalAlpha = alfa;
+  const s = Math.sin(anim) * 3;
+  ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.beginPath(); ctx.ellipse(0, 3, 13, 12, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#2f7f6b'; ctx.fillRect(-5 + s, -11, 6, 4); ctx.fillRect(-5 - s, 7, 6, 4);          // pés
+  ctx.fillStyle = '#3ca88c'; ctx.beginPath(); ctx.ellipse(0, 0, 8, 12, 0, 0, 7); ctx.fill();            // uniforme verde
+  ctx.fillStyle = '#e9fff8'; ctx.fillRect(-2, -8, 3, 16);
+  ctx.fillStyle = '#f2c9a0'; ctx.beginPath(); ctx.arc(7, -9, 3, 0, 7); ctx.arc(7, 9, 3, 0, 7); ctx.fill(); // mãos
+  ctx.fillStyle = '#c9a678'; ctx.fillRect(7, -7, 7, 14);                                                  // caixa transportadora
+  ctx.fillStyle = '#e4cfa3'; ctx.fillRect(8, -6, 5, 12); ctx.fillStyle = '#8a6a3c'; ctx.fillRect(10, -6, 1, 12);
+  ctx.fillStyle = '#f2c9a0'; ctx.beginPath(); ctx.arc(1, 0, 6, 0, 7); ctx.fill();                         // cabeça
+  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0, 0, 6, Math.PI * 0.5, Math.PI * 1.5); ctx.fill(); // touca
+  ctx.fillStyle = '#9fe3ff'; ctx.fillRect(4, -4, 2, 8);                                                  // máscara
+  ctx.restore();
+}
+function desenharInimigo(e) {
+  ctx.save(); ctx.translate(e.x, e.y); ctx.rotate(e.ang);
+  if (e.tipo === 'robo') {   // robô de limpeza (disco com sensor luminoso)
+    const pulso = 0.5 + 0.5 * Math.sin(performance.now() / 150);
+    ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(0, 3, 15, 13, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#7d8fa0'; ctx.beginPath(); ctx.arc(0, 0, 13, 0, 7); ctx.fill();
+    ctx.fillStyle = '#d6e3ee'; ctx.beginPath(); ctx.arc(0, 0, 10, 0, 7); ctx.fill();
+    ctx.fillStyle = '#3a4a58'; ctx.fillRect(-7, -2, 8, 4);
+    ctx.fillStyle = '#ffb347'; ctx.beginPath(); ctx.arc(-3, 0, 2 + pulso, 0, 7); ctx.fill();            // luz de status
+    ctx.fillStyle = '#2b3a42'; ctx.fillRect(7, -8, 5, 16);                                                // para-choque
+    ctx.fillStyle = '#6dff9d'; ctx.fillRect(9, -6, 2, 3); ctx.fillRect(9, 3, 2, 3);                       // sensores
+  } else {   // analista da qualidade (jaleco azul-claro, óculos, crachá e prancheta de não conformidades)
+    ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.beginPath(); ctx.ellipse(0, 3, 14, 12, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#cfe8ff'; ctx.beginPath(); ctx.ellipse(0, 0, 9, 13, 0, 0, 7); ctx.fill();          // jaleco
+    ctx.fillStyle = '#7fb2e5'; ctx.fillRect(-2, -10, 3, 20);
+    ctx.fillStyle = '#f2c9a0'; ctx.beginPath(); ctx.arc(8, -9, 3, 0, 7); ctx.arc(8, 9, 3, 0, 7); ctx.fill(); // mãos
+    ctx.fillStyle = '#6b4f2a'; ctx.fillRect(9, 2, 7, 11); ctx.fillStyle = '#fff'; ctx.fillRect(10, 3, 5, 9);  // prancheta
+    ctx.fillStyle = '#e0404f'; ctx.fillRect(11, 5, 3, 1); ctx.fillRect(11, 8, 3, 1);                          // itens marcados em vermelho
+    ctx.fillStyle = '#f2c9a0'; ctx.beginPath(); ctx.arc(1, 0, 7, 0, 7); ctx.fill();                      // cabeça
+    ctx.fillStyle = '#3a2a1a'; ctx.beginPath(); ctx.arc(0, 0, 7, Math.PI * 0.55, Math.PI * 1.45); ctx.fill(); // cabelo
+    ctx.fillStyle = '#222'; ctx.fillRect(6, -4, 3, 3); ctx.fillRect(6, 1, 3, 3); ctx.fillRect(6, -1, 2, 2);   // óculos
+    ctx.fillStyle = '#2f80ed'; ctx.fillRect(-3, 5, 4, 3);                                                  // crachá
+  }
+  ctx.restore();
+  if (e.vendo && alerta > 0) {
+    ctx.fillStyle = '#ff2d3d'; ctx.font = 'bold 18px monospace'; ctx.textAlign = 'center'; ctx.fillText(e.tipo === 'analista' ? 'NC!' : '!', e.x, e.y - 18);
+  }
+}
+
+function desenharCamera(c, t) {
+  const x = c.x * T + T / 2, y = c.y * T + T / 2;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rad(c.base));
+  ctx.fillStyle = '#2b3a42'; ctx.fillRect(-4, -8, 12, 16);
+  ctx.restore();
+  ctx.save(); ctx.translate(x + Math.cos(rad(c.base)) * 8, y + Math.sin(rad(c.base)) * 8); ctx.rotate(c.ang);
+  ctx.fillStyle = '#4b5c64'; ctx.fillRect(-6, -5, 14, 10);
+  ctx.fillStyle = c.vendo ? '#ff2d3d' : (Math.sin(t * 6) > 0 ? '#ff8c8c' : '#a33'); ctx.fillRect(6, -3, 4, 6);
+  ctx.restore();
+  if (c.vendo && alerta > 0) { ctx.fillStyle = '#ff2d3d'; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center'; ctx.fillText('!', x, y + 26); }
+}
+
+function desenhar() {
+  const t = performance.now() / 1000;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  // chão e objetos
+  for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) {
+    const c = grade[ty][tx];
+    if (c === 'x' || c === 't') { desenharChao(tx, ty); } else desenharTile(c, tx, ty, t);
+  }
+  // esconderijos opacos (ficam sob o rato)
+  for (let ty = 0; ty < ROWS; ty++) for (let tx = 0; tx < COLS; tx++) { const c = grade[ty][tx]; if (c === 'x' || c === 't') desenharEsconderijo(c, tx, ty, 1); }
+  // cones de visão
+  if (estado === 'jogando') {
+    inimigos.forEach(e => { const pf = PERFIL[e.tipo]; desenharCone(e.x, e.y, e.ang, pf.alc, pf.fov, e.vendo ? 'rgba(255,40,40,.35)' : 'rgba(255,230,80,.20)'); });
+    cameras.forEach(c => { const o = origemCamera(c); desenharCone(o.x, o.y, c.ang, c.alc, rad(50), c.vendo ? 'rgba(255,40,40,.35)' : 'rgba(255,120,60,.20)'); });
+  }
+  cameras.forEach(c => desenharCamera(c, t));
+  inimigos.forEach(desenharInimigo);
+  // rato (pisca quando invulnerável; fica translúcido quando escondido)
+  const oculto = estado === 'jogando' && escondido();
+  if (!(invul > 0 && Math.floor(t * 12) % 2)) {
+    desenharRato(p.x, p.y, p.ang, p.anim, 1);
+  }
+  if (oculto) { const c = tileEm(p.x, p.y), tx = Math.floor(p.x / T), ty = Math.floor(p.y / T); desenharEsconderijo(c, tx, ty, c === 't' ? 0.7 : 0.97); }
+  // barra de alerta
+  if (alerta > 0) { r('#000', p.x - 14, p.y - 22, 28, 5); r('#ff2d3d', p.x - 13, p.y - 21, Math.min(26, 26 * alerta / 0.4), 3); }
+  // flash vermelho ao ser capturado
+  if (flash > 0) { ctx.fillStyle = `rgba(255,0,0,${flash * 0.45})`; ctx.fillRect(0, 0, cv.width, cv.height); }
+  // alerta vermelho nos últimos 10 s
+  if (estado === 'jogando' && tempo <= 10) { ctx.strokeStyle = `rgba(255,50,60,${0.35 + 0.35 * Math.sin(t * 10)})`; ctx.lineWidth = 8; ctx.strokeRect(4, 4, cv.width - 8, cv.height - 8); }
+}
+
+/* =====================================================================
+   LOOP PRINCIPAL
+   ===================================================================== */
+let antes = performance.now();
+function loop(agora) {
+  const dt = Math.min(0.05, (agora - antes) / 1000); antes = agora;
+  atualizar(dt);
+  desenhar();
+  requestAnimationFrame(loop);
+}
+carregarNivel(0);      // pré-visualização parada atrás da tela inicial (timer e inimigos não andam)
+atualizarHUD();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Missão Biotério</title>
+<style>
+  :root { --azul:#8fd3ea; --agua:#7fe0c8; --fundo:#0d2b36; --painel:#f2fbfc; --tinta:#16414f; --verm:#ff4d5a; --ouro:#ffd23f; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; min-height:100%; background:var(--fundo); color:#fff; font-family:"Trebuchet MS", system-ui, sans-serif; }
+  body { display:flex; flex-direction:column; align-items:center; padding:8px; user-select:none; -webkit-user-select:none; }
+
+  /* ---------- Área do jogo ---------- */
+  #jogo { position:relative; width:min(100%, 900px); border:4px solid #1d5568; border-radius:12px; background:#0a2029; overflow:hidden; box-shadow:0 8px 30px rgba(0,0,0,.5); }
+  #hud { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 12px; background:linear-gradient(#1d5568,#154455); font-weight:bold; font-size:clamp(12px, 2.4vw, 18px); visibility:hidden; }
+  #hud.on { visibility:visible; }
+  #hud .item { display:flex; flex-direction:column; align-items:center; line-height:1.1; min-width:0; }
+  #hud small { font-size:.62em; opacity:.75; letter-spacing:1px; }
+  #cronometro { font-family:"Courier New", monospace; font-size:clamp(24px, 6vw, 44px); color:var(--agua); text-shadow:0 0 10px rgba(127,224,200,.6); padding:0 14px; border-radius:10px; background:#0a2029; }
+  #cronometro.critico { color:var(--verm); text-shadow:0 0 12px rgba(255,77,90,.9); animation:piscar .5s steps(2) infinite; }
+  @keyframes piscar { 50% { opacity:.25; } }
+  #vidas { color:#ff6b81; letter-spacing:2px; }
+  canvas { display:block; width:100%; height:auto; image-rendering:pixelated; background:#d9eef2; touch-action:none; }
+  #toast { position:absolute; left:50%; top:70px; transform:translateX(-50%); background:rgba(10,32,41,.88); border:2px solid var(--agua); padding:6px 14px; border-radius:20px; font-size:clamp(12px,2.6vw,17px); opacity:0; transition:opacity .25s; pointer-events:none; text-align:center; max-width:92%; z-index:3; }
+  #toast.on { opacity:1; }
+
+  /* ---------- Telas (overlays) ---------- */
+  .tela { position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:14px; text-align:center; background:radial-gradient(circle at 50% 30%, rgba(30,90,110,.96), rgba(8,28,36,.97)); opacity:1; transition:opacity .5s; z-index:5; overflow-y:auto; }
+  .tela.ativa { display:flex; }
+  .tela.fade { opacity:0; pointer-events:none; }
+  .tela h1 { margin:0; font-size:clamp(28px, 7vw, 56px); color:var(--agua); text-shadow:3px 3px 0 #0d2b36; letter-spacing:2px; }
+  .tela h2 { margin:0; font-size:clamp(22px, 5vw, 38px); color:var(--ouro); text-shadow:2px 2px 0 #0d2b36; }
+  #fimTitulo.gameover { font-size:clamp(40px, 11vw, 84px); color:var(--verm); letter-spacing:6px; text-shadow:4px 4px 0 #0d2b36, 0 0 22px rgba(255,77,90,.55); animation:pulsa 1.4s ease-in-out infinite; }
+  .tela p { margin:0; max-width:620px; font-size:clamp(12px, 2.5vw, 16px); line-height:1.4; }
+  .tela .regras { background:rgba(255,255,255,.08); border-radius:10px; padding:8px 14px; text-align:left; }
+  .rato-logo { font-size:clamp(40px, 10vw, 70px); filter:drop-shadow(0 4px 0 rgba(0,0,0,.3)); animation:pula 1s ease-in-out infinite; }
+  @keyframes pula { 50% { transform:translateY(-8px) rotate(-6deg); } }
+  input[type=text] { font:inherit; font-size:18px; padding:8px 12px; border-radius:10px; border:3px solid var(--azul); background:#f2fbfc; color:var(--tinta); text-align:center; width:min(260px, 80%); }
+  .btn { font:inherit; font-weight:bold; font-size:clamp(16px, 4vw, 24px); letter-spacing:1px; padding:12px 28px; border:0; border-radius:14px; cursor:pointer; color:#0d2b36; background:linear-gradient(#aaf5e2,#4fcfae); box-shadow:0 5px 0 #2a8c75, 0 8px 14px rgba(0,0,0,.4); transition:transform .1s; }
+  .btn:hover { transform:translateY(-2px); }
+  .btn:active { transform:translateY(3px); box-shadow:0 2px 0 #2a8c75; }
+  .btn.grande { font-size:clamp(20px, 5vw, 30px); padding:16px 40px; animation:pulsa 1.4s ease-in-out infinite; }
+  .btn.sec { background:linear-gradient(#ffd6d9,#ff9aa2); box-shadow:0 5px 0 #b3535c, 0 8px 14px rgba(0,0,0,.4); font-size:14px; padding:8px 16px; }
+  @keyframes pulsa { 50% { transform:scale(1.06); } }
+  .linhas { display:grid; grid-template-columns:auto auto; gap:4px 18px; background:rgba(255,255,255,.1); padding:10px 18px; border-radius:10px; font-size:clamp(13px,3vw,18px); text-align:left; }
+  .linhas b { text-align:right; color:var(--ouro); }
+  .botoes { display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:center; }
+
+  /* ---------- Ranking ---------- */
+  table { border-collapse:collapse; width:min(100%, 620px); font-size:clamp(11px, 2.6vw, 15px); background:rgba(255,255,255,.08); border-radius:8px; overflow:hidden; }
+  th, td { padding:4px 6px; text-align:center; }
+  th { background:#1d5568; font-size:.85em; }
+  td.nome { text-align:left; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  tr.eu td { background:var(--ouro); color:#0d2b36; font-weight:bold; }
+
+  /* ---------- Controles de toque ---------- */
+  #dpad { display:none; margin-top:10px; grid-template-columns:repeat(3, 64px); grid-template-rows:repeat(3, 64px); gap:6px; touch-action:none; }
+  #dpad.on { display:grid; }
+  #dpad button { border:0; border-radius:16px; background:rgba(143,211,234,.85); color:#0d2b36; font-size:28px; font-weight:bold; touch-action:none; }
+  #dpad button:active { background:var(--agua); }
+  #dpad .cima { grid-column:2; grid-row:1; } #dpad .esq { grid-column:1; grid-row:2; }
+  #dpad .dir { grid-column:3; grid-row:2; } #dpad .baixo { grid-column:2; grid-row:3; }
+  #rodape { margin-top:8px; font-size:12px; opacity:.6; text-align:center; }
+</style>
+</head>
+<body>
+
+<div id="jogo">
+  <!-- HUD: só aparece durante o jogo -->
+  <div id="hud">
+    <div class="item"><small>SELOS</small><span id="hQueijos">⭐ 0</span></div>
+    <div class="item"><small>CHANCES</small><span id="vidas">♥♥♥</span></div>
+    <div class="item" id="cronometro">01:00</div>
+    <div class="item"><small>SETOR</small><span id="hLab">1/6</span></div>
+    <div class="item"><small>PONTOS</small><span id="hPontos">0</span></div>
+  </div>
+
+  <canvas id="tela" aria-label="Setor do biotério"></canvas>
+  <div id="toast"></div>
+
+  <!-- Tela inicial -->
+  <div id="telaInicio" class="tela ativa">
+    <div class="rato-logo">📋</div>
+    <h1>MISSÃO BIOTÉRIO</h1>
     <p>Hoje é dia de auditoria! Você é o(a) <b>analista da qualidade</b> e precisa inspecionar os <b>6 setores do biotério</b>: Quarentena, Fundação, Produção, Reservado, Higienização e Expedição, garantindo o bem-estar dos animais. Pegue o <b>crachá do setor</b> (e as chaves coloridas) e chegue à <b>porta de passagem</b> em <b>60 segundos</b> por setor.</p>
     <div class="regras">
       <p>⌨️ Setas / WASD (ou deslize o dedo / botões na tela)</p>
